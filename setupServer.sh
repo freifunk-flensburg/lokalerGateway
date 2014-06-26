@@ -28,7 +28,7 @@ dpkg-reconfigure locales
 echo "deb http://repo.universe-factory.net/debian/ sid main" > /etc/apt/sources.list.d/fastd.list
 apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 16EF3F64CB201D9C
 apt-get update
-apt-get install -y batctl git fastd isc-dhcp-server radvd openvpn iptables-persistent dnsmasq build-essential
+apt-get install -y batctl git fastd iptables-persistent build-essential
 
 # install new (old) kernel
 # ubuntu 14.04 shipps 3.13 which shipps batman-adv 2014.0 gluon only supports batman-adv 2013.4 at the moment, so we have to downgrade to an older kernel which shipps it.
@@ -88,7 +88,7 @@ cd /etc/fastd/vpn/
 tee fastd.conf <<DELIM
 log to syslog level warn;
 interface "vpn-fffl";
-method "salsa2012+gmac"; # new method, between gateways for the moment (faster)
+method "salsa2012+gmac";
 bind 0.0.0.0:10000;
 hide ip addresses yes;
 hide mac addresses yes;
@@ -98,6 +98,10 @@ include peers from "peers";
 on up "
  ifup bat0 --force
  ip link set address $vpn_mac up dev \$INTERFACE
+ /etc/fastd/vpn/fastd-up
+";
+on down "
+ /etc/fastd/fastd/vpn/fastd-down
 ";
 DELIM
 
@@ -115,7 +119,7 @@ echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 rm -rf /etc/sysctl.d/99-hetzner.conf
 
 # when the vpn comes up, we set an outbound route to our table 42
-tee /etc/openvpn/mullvad-up <<DELIM
+tee /etc/fastd/vpn/fastd-up <<DELIM
 #!/bin/sh
 ip route replace default via \$5 table 42
 exit 0
@@ -124,7 +128,7 @@ chmod u+x /etc/fastd/fastd/vpn/fastd-up
  
 # when the vpn goes down, we remove our outbound route, so no mesh vpn traffic
 # will leaver our gateway through eth0.
-tee /etc/openvpn/mullvad-down <<DELIM
+tee /etc/fastd/vpn/fastd-down <<DELIM
 #!/bin/sh
 ip route replace unreachable default table 42
 exit 0
@@ -132,5 +136,4 @@ DELIM
 chmod u+x /etc/fastd/fastd/vpn/fastd-down
 
 # autostart on boot
-update-rc.d openvpn defaults
 update-rc.d iptables-persistent defaults
