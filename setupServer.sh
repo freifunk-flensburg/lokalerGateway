@@ -6,9 +6,7 @@
 # and forked by Wlanfr3ak for Client Direct connect
 # Original: https://gist.github.com/foertel/ca97482119e1197bef7c
 #
-# this script will turn your ubuntu 14.04 minimal box
-# into a working gateway for freifunk flensburg
-#
+# this script will turn your ubuntu 14.04 minimal box into a working internet-to-freifunk-flensburg Server
 # just run as root, add your VPN credentials and reboot!
 ###
 
@@ -22,10 +20,6 @@ read lan_ip
 echo 'MAC of mash vpn (from wiki): '
 read vpn_mac
 
-echo 'Private Key for your Client: '
-read vpn_secret
-
-
 # ubuntu / repair some out-of-the-box-fuckup
 locale-gen en_US en_US.UTF-8 de_DE.UTF-8
 dpkg-reconfigure locales
@@ -36,13 +30,8 @@ apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 16EF3F64CB201D9C
 apt-get update
 apt-get install -y batctl git fastd isc-dhcp-server radvd openvpn iptables-persistent dnsmasq build-essential
 
-###
 # install new (old) kernel
-#
-# ubuntu 14.04 shipps 3.13 which shipps batman-adv 2014.0
-# gluon only supports batman-adv 2013.4 at the moment, so
-# we have to downgrade to an older kernel which shipps it.
-###
+# ubuntu 14.04 shipps 3.13 which shipps batman-adv 2014.0 gluon only supports batman-adv 2013.4 at the moment, so we have to downgrade to an older kernel which shipps it.
 
 cd /tmp
 wget http://kernel.ubuntu.com/~kernel-ppa/mainline/v3.12.6-trusty/linux-image-3.12.6-031206-generic_3.12.6-031206.201312201218_amd64.deb
@@ -52,18 +41,10 @@ dpkg --install linux-image*.deb
 echo 'GRUB_DEFAULT="1>2"' >> /etc/default/grub
 update-grub
 
-
-###
 # import peers
-###
 git clone https://github.com/freifunk-flensburg/fffl-fastd-peers.git /etc/fastd/vpn/peers
 
-
-###
-# iptables
-#
-# everything routed through the external vpn has to be masqueraded (NAT)
-###
+# iptables - everything routed through the external vpn has to be masqueraded (NAT)
 tee /etc/iptables/rules.v4 <<DELIM
 *nat
 :PREROUTING ACCEPT [15:1459]
@@ -74,19 +55,13 @@ tee /etc/iptables/rules.v4 <<DELIM
 COMMIT
 DELIM
 
-
-###
-# routing
-#
-# send all packages from bat0 (mesh vpn) through external vpn
-###
+# routing - send all packages from bat0 (mesh vpn) through external vpn
 tee /etc/rc.local <<DELIM
 ip rule add from all iif bat0 table 42
 ip route add unreachable default table 42
 ip route add 10.129.0.0/16 dev bat0 table 42
 exit 0
 DELIM
-
 
 ###
 # network device
@@ -107,10 +82,7 @@ iface bat0 inet manual
  down ip link set down dev bat0
 DELIM
 
-
-###
 # set up fffl mesh vpn
-###
 mkdir -p /etc/fastd/vpn/
 cd /etc/fastd/vpn/
 tee fastd.conf <<DELIM
@@ -128,16 +100,21 @@ on up "
  ip link set address $vpn_mac up dev \$INTERFACE
 ";
 DELIM
+
+echo 'Nun werden fastd Keys generiert'
+fastd --generate-key >> /etc/fastd/vpn/secret.conf
+echo 'Nun bitte den Secret Key kopieren (UMSCH+STRG+C):'
+echo /etc/fastd/vpn/secret.conf
+echo 'Bitte Secret kopieren, einfügen dann mit Enter bestätigen!'
+read vpn_secret
+echo 'Wenn euer Publickey und euer Host nicht im Peering der Clients ist wird es nicht klappen !'
 echo 'secret "'$vpn_secret'";' > secret.conf
 
-
-###
 # external vpn
-###
 echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 rm -rf /etc/sysctl.d/99-hetzner.conf
 
- # when the vpn comes up, we set an outbound route to our table 42
+# when the vpn comes up, we set an outbound route to our table 42
 tee /etc/openvpn/mullvad-up <<DELIM
 #!/bin/sh
 ip route replace default via \$5 table 42
@@ -145,8 +122,8 @@ exit 0
 DELIM
 chmod u+x /etc/fastd/fastd/vpn/fastd-up
  
- # when the vpn goes down, we remove our outbound route, so no mesh vpn traffic
- # will leaver our gateway through eth0.
+# when the vpn goes down, we remove our outbound route, so no mesh vpn traffic
+# will leaver our gateway through eth0.
 tee /etc/openvpn/mullvad-down <<DELIM
 #!/bin/sh
 ip route replace unreachable default table 42
@@ -154,8 +131,6 @@ exit 0
 DELIM
 chmod u+x /etc/fastd/fastd/vpn/fastd-down
 
-###
 # autostart on boot
-###
 update-rc.d openvpn defaults
 update-rc.d iptables-persistent defaults
